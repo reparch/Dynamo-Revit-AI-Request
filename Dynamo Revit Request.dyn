@@ -1,0 +1,259 @@
+{
+  "Uuid": "86e0070c-98fd-4ac7-a731-01bb76018ffd",
+  "IsCustomNode": false,
+  "Description": "",
+  "Name": "Dynamo Revit Request",
+  "ElementResolver": {
+    "ResolutionMap": {}
+  },
+  "Inputs": [
+    {
+      "Id": "5264978694e2476582316232da78c485",
+      "Name": "Request",
+      "Type": "string",
+      "Type2": "string",
+      "Value": "",
+      "Description": "Создание строки.",
+      "SelectedIndex": 0
+    },
+    {
+      "Id": "00c309ff404847f585e47618d1e68f8a",
+      "Name": "File Path",
+      "Type": "string",
+      "Type2": "string",
+      "Value": "Файл не выбран.",
+      "Description": "Возможность выбрать файл в системе и возврат пути к нему",
+      "SelectedIndex": 0
+    }
+  ],
+  "Outputs": [],
+  "Nodes": [
+    {
+      "ConcreteType": "PythonNodeModels.PythonNode, PythonNodeModels",
+      "NodeType": "PythonScriptNode",
+      "Code": "import sys\r\nimport json\r\nimport urllib.request\r\nimport ctypes\r\nfrom urllib.error import HTTPError, URLError\r\n\r\nkey_file_path = IN[0]\r\nprompt = IN[1]\r\n\r\ndef show_dialog(title, message):\r\n    # Вызов нативного окна Windows. \r\n    # 0 = кнопка ОК, 64 = иконка информации (MB_ICONINFORMATION)\r\n    ctypes.windll.user32.MessageBoxW(0, str(message), str(title), 0 | 64)\r\n\r\ntry:\r\n    with open(key_file_path, 'r', encoding='utf-8-sig') as file:\r\n        api_key = file.read().strip()\r\n\r\n    # Укажите актуальную версию модели\r\n    url = f\"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={api_key}\"\r\n    \r\n    data = {\"contents\": [{\"parts\": [{\"text\": prompt}]}]}\r\n    json_data = json.dumps(data).encode('utf-8')\r\n    \r\n    headers = {'Content-Type': 'application/json'}\r\n    req = urllib.request.Request(url, data=json_data, headers=headers)\r\n    \r\n    with urllib.request.urlopen(req) as response:\r\n        result_text = json.loads(response.read().decode('utf-8'))[\"candidates\"][0][\"content\"][\"parts\"][0][\"text\"]\r\n        \r\n        show_dialog(\"Ответ от Gemini\", result_text)\r\n        OUT = result_text\r\n\r\nexcept HTTPError as e:\r\n    error_body = e.read().decode('utf-8')\r\n    error_msg = f\"Детали ошибки (HTTP {e.code}):\\n{error_body}\"\r\n    show_dialog(\"Ошибка API Gemini\", error_msg)\r\n    OUT = error_msg\r\nexcept URLError as e:\r\n    error_msg = f\"Ошибка сети: {e.reason}\"\r\n    show_dialog(\"Ошибка подключения\", error_msg)\r\n    OUT = error_msg\r\nexcept Exception as e:\r\n    error_msg = f\"Системная ошибка: {str(e)}\"\r\n    show_dialog(\"Ошибка выполнения\", error_msg)\r\n    OUT = error_msg",
+      "Engine": "CPython3",
+      "EngineName": "CPython3",
+      "VariableInputPorts": true,
+      "Id": "43bc8929af684a61ab5589188b65c1a6",
+      "Inputs": [
+        {
+          "Id": "2c996dca20e0490baf6acd24c60e1873",
+          "Name": "IN[0]",
+          "Description": "Input #0",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "ce3d33fd5671434bbb6599fcc961b5c4",
+          "Name": "IN[1]",
+          "Description": "Input #1",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "a2419d47bd904278822b6eb5b1716914",
+          "Name": "OUT",
+          "Description": "Результат сценария Python",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Выполнение встроенного сценария Python."
+    },
+    {
+      "ConcreteType": "CoreNodeModels.Input.StringInput, CoreNodeModels",
+      "NodeType": "StringInputNode",
+      "InputValue": "",
+      "Id": "5264978694e2476582316232da78c485",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "a49560b99364498eb07a5b3018ccab46",
+          "Name": "",
+          "Description": "String",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Создание строки."
+    },
+    {
+      "ConcreteType": "CoreNodeModels.Watch, CoreNodeModels",
+      "NodeType": "ExtensionNode",
+      "Id": "2cf30f90570348f3a745dd54bd88cdce",
+      "Inputs": [
+        {
+          "Id": "2b9a7866857b4685937903848128a13f",
+          "Name": "",
+          "Description": "Узел для отображения выходных данных",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "949a4fb7c35c4cf58076efb0178f0f7d",
+          "Name": "",
+          "Description": "Выходные данные узла",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Визуализация выходных данных узла"
+    },
+    {
+      "ConcreteType": "CoreNodeModels.Input.Filename, CoreNodeModels",
+      "HintPath": "",
+      "InputValue": "Файл не выбран.",
+      "NodeType": "ExtensionNode",
+      "Id": "00c309ff404847f585e47618d1e68f8a",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "e978bc962705494eb6c3f8e9dabc7ac5",
+          "Name": "",
+          "Description": "Путь к файлу",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Возможность выбрать файл в системе и возврат пути к нему"
+    }
+  ],
+  "Connectors": [
+    {
+      "Start": "a2419d47bd904278822b6eb5b1716914",
+      "End": "2b9a7866857b4685937903848128a13f",
+      "Id": "4b47be87cf39413da92c7221afc94d4a",
+      "IsHidden": "False"
+    },
+    {
+      "Start": "a49560b99364498eb07a5b3018ccab46",
+      "End": "ce3d33fd5671434bbb6599fcc961b5c4",
+      "Id": "b62ce117a90b46678718c8b7e5d31364",
+      "IsHidden": "False"
+    },
+    {
+      "Start": "e978bc962705494eb6c3f8e9dabc7ac5",
+      "End": "2c996dca20e0490baf6acd24c60e1873",
+      "Id": "cdf0b61f17524733af580366c18bd4e9",
+      "IsHidden": "False"
+    }
+  ],
+  "Dependencies": [],
+  "NodeLibraryDependencies": [],
+  "Thumbnail": "",
+  "GraphDocumentationURL": null,
+  "ExtensionWorkspaceData": [
+    {
+      "ExtensionGuid": "28992e1d-abb9-417f-8b1b-05e053bee670",
+      "Name": "Свойства",
+      "Version": "2.17",
+      "Data": {}
+    },
+    {
+      "ExtensionGuid": "DFBD9CC0-DB40-457A-939E-8C8555555A9D",
+      "Name": "Generative Design",
+      "Version": "4.0",
+      "Data": {}
+    }
+  ],
+  "Author": "",
+  "Linting": {
+    "activeLinter": "Нет",
+    "activeLinterId": "7b75fb44-43fd-4631-a878-29f4d5d8399a",
+    "warningCount": 0,
+    "errorCount": 0
+  },
+  "Bindings": [],
+  "View": {
+    "Dynamo": {
+      "ScaleFactor": 1.0,
+      "HasRunWithoutCrash": true,
+      "IsVisibleInDynamoLibrary": true,
+      "Version": "2.17.0.3472",
+      "RunType": "Manual",
+      "RunPeriod": "1000"
+    },
+    "Camera": {
+      "Name": "_Фоновый просмотр",
+      "EyeX": -17.0,
+      "EyeY": 24.0,
+      "EyeZ": 50.0,
+      "LookX": 12.0,
+      "LookY": -13.0,
+      "LookZ": -58.0,
+      "UpX": 0.0,
+      "UpY": 1.0,
+      "UpZ": 0.0
+    },
+    "ConnectorPins": [],
+    "NodeViews": [
+      {
+        "Name": "Python Script",
+        "ShowGeometry": true,
+        "Id": "43bc8929af684a61ab5589188b65c1a6",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": 426.0,
+        "Y": 334.0
+      },
+      {
+        "Name": "Request",
+        "ShowGeometry": true,
+        "Id": "5264978694e2476582316232da78c485",
+        "IsSetAsInput": true,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": 194.03887007754201,
+        "Y": 456.78500322469449
+      },
+      {
+        "Name": "Watch",
+        "ShowGeometry": true,
+        "Id": "2cf30f90570348f3a745dd54bd88cdce",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": 664.62833974782188,
+        "Y": 270.71703776131824
+      },
+      {
+        "Name": "File Path",
+        "ShowGeometry": true,
+        "Id": "00c309ff404847f585e47618d1e68f8a",
+        "IsSetAsInput": true,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": 214.11383565524159,
+        "Y": 144.00263395897633
+      }
+    ],
+    "Annotations": [],
+    "X": 27.9845412329191,
+    "Y": 6.5225657573301135,
+    "Zoom": 0.63524834044862044
+  }
+}
