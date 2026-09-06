@@ -1,0 +1,46 @@
+import sys
+import json
+import urllib.request
+import ctypes
+from urllib.error import HTTPError, URLError
+
+key_file_path = IN[0]
+prompt = IN[1]
+
+def show_dialog(title, message):
+    # Вызов нативного окна Windows. 
+    # 0 = кнопка ОК, 64 = иконка информации (MB_ICONINFORMATION)
+    ctypes.windll.user32.MessageBoxW(0, str(message), str(title), 0 | 64)
+
+try:
+    with open(key_file_path, 'r', encoding='utf-8-sig') as file:
+        api_key = file.read().strip()
+
+    # Укажите актуальную версию модели
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={api_key}"
+    
+    data = {"contents": [{"parts": [{"text": prompt}]}]}
+    json_data = json.dumps(data).encode('utf-8')
+    
+    headers = {'Content-Type': 'application/json'}
+    req = urllib.request.Request(url, data=json_data, headers=headers)
+    
+    with urllib.request.urlopen(req) as response:
+        result_text = json.loads(response.read().decode('utf-8'))["candidates"][0]["content"]["parts"][0]["text"]
+        
+        show_dialog("Ответ от Gemini", result_text)
+        OUT = result_text
+
+except HTTPError as e:
+    error_body = e.read().decode('utf-8')
+    error_msg = f"Детали ошибки (HTTP {e.code}):\n{error_body}"
+    show_dialog("Ошибка API Gemini", error_msg)
+    OUT = error_msg
+except URLError as e:
+    error_msg = f"Ошибка сети: {e.reason}"
+    show_dialog("Ошибка подключения", error_msg)
+    OUT = error_msg
+except Exception as e:
+    error_msg = f"Системная ошибка: {str(e)}"
+    show_dialog("Ошибка выполнения", error_msg)
+    OUT = error_msg
