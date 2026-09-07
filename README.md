@@ -1,4 +1,5 @@
 Веб интерфейс для обращения к gemini - Python код в файле: Web VPS Gemini
+
 В строке 7 указать свой API key после "API_KEY = "
 
 Альтернативный скрипт внутри Revit. Позволяет отправить запрос Gemini 3.6 Flash через Python Script на CPython3 в Dynamo.
