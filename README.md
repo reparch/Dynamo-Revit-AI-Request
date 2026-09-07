@@ -2,7 +2,8 @@
 
 В строке 7 указать свой API key после "API_KEY = "
 
-**_Альтернативный скрипт внутри Revit._** Позволяет отправить запрос Gemini 3.6 Flash через Python Script на CPython3 в Dynamo.
+**_Альтернативный скрипт внутри Revit._** 
+Позволяет отправить запрос Gemini 3.6 Flash через Python Script на CPython3 в Dynamo.
 
 Запуск: 
 1. Открыть Проигрыватель
