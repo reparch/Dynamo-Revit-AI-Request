@@ -17,17 +17,20 @@ HTML_TEMPLATE = """
     <title>BIM Assistant | Revit & Automation</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
-        body { font-family: sans-serif; max-width: 800px; margin: 30px auto; padding: 20px; background-color: #f4f6f9; }
-        .controls { background: white; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #ddd; display: flex; gap: 20px; flex-wrap: wrap; }
+        body { font-family: sans-serif; max-width: 850px; margin: 30px auto; padding: 20px; background-color: #f4f6f9; }
+        .controls { background: white; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #ddd; display: flex; gap: 25px; align-items: center; flex-wrap: wrap; }
         .control-group { display: flex; flex-direction: column; gap: 5px; }
         select { padding: 6px; border-radius: 4px; border: 1px solid #ccc; font-size: 14px; }
+        .temp-container { min-width: 220px; }
+        .temp-slider-wrap { display: flex; flex-direction: column; gap: 4px; }
+        .ticks { display: flex; justify-content: space-between; font-size: 11px; color: #666; padding: 0 4px; }
         #chatbox { height: 450px; background: white; border: 1px solid #ccc; border-radius: 8px; overflow-y: auto; padding: 15px; margin-bottom: 15px; }
         .msg { margin-bottom: 15px; line-height: 1.5; }
-        /* white-space: pre-wrap сохраняет все табы и переносы строк пользователя */
         .user { color: #2c3e50; font-weight: bold; white-space: pre-wrap; word-wrap: break-word; font-family: monospace; font-size: 14px; }
         .bot { color: #16a085; }
         .bot p { margin: 5px 0; }
         .bot ul, .bot ol { padding-left: 20px; margin: 5px 0; }
+        .bot pre { background: #f0f2f5; padding: 10px; border-radius: 5px; overflow-x: auto; color: #333; }
         .input-area { display: flex; gap: 10px; align-items: flex-start; }
         textarea { flex-grow: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; resize: vertical; min-height: 44px; font-family: monospace; }
         button { padding: 10px 20px; background-color: #2980b9; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; height: 44px; }
@@ -52,16 +55,35 @@ HTML_TEMPLATE = """
                 <option value="френдли">Френдли (бро, дружище)</option>
             </select>
         </div>
+        <div class="control-group temp-container">
+            <label for="tempSlider"><b>Температура:</b> <span id="tempValue" style="color: #2980b9; font-weight: bold;">0.7</span></label>
+            <div class="temp-slider-wrap">
+                <!-- Слайдер на 3 положения: 0, 1, 2 -->
+                <input type="range" id="tempSlider" min="0" max="2" step="1" value="1" oninput="updateTemperature(this.value)">
+                <div class="ticks">
+                    <span>0.0</span>
+                    <span>0.7</span>
+                    <span>1.2</span>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div id="chatbox"></div>
     
     <div class="input-area">
-        <textarea id="userInput" rows="3" placeholder="Вставьте код или текст (Shift+Enter для новой строки, Enter для отправки)..." onkeydown="handleKeyPress(event)"></textarea>
+        <textarea id="userInput" rows="3" placeholder="Вставьте код или вопрос (Shift+Enter для новой строки, Enter для отправки)..." onkeydown="handleKeyPress(event)"></textarea>
         <button onclick="sendMessage()">Отправить</button>
     </div>
 
     <script>
+        // Соответствие положений ползунка значениям temperature
+        const tempSteps = [0.0, 0.7, 1.2];
+
+        function updateTemperature(index) {
+            document.getElementById('tempValue').innerText = tempSteps[index];
+        }
+
         async function sendMessage() {
             const input = document.getElementById('userInput');
             const text = input.value;
@@ -69,12 +91,13 @@ HTML_TEMPLATE = """
             
             const length = document.getElementById('lengthSelect').value;
             const style = document.getElementById('styleSelect').value;
+            const tempIndex = document.getElementById('tempSlider').value;
+            const temperature = tempSteps[tempIndex];
 
             const chatbox = document.getElementById('chatbox');
-            // Экранируем HTML-теги, чтобы код со скобками < > отображался как текст
             const safeText = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
             
-            chatbox.innerHTML += `<div class="msg user">Вы: <span style="font-weight:normal; font-size:12px; color:#888; font-family:sans-serif;">[${length}, ${style}]</span><br>${safeText}</div>`;
+            chatbox.innerHTML += `<div class="msg user">Вы: <span style="font-weight:normal; font-size:12px; color:#888; font-family:sans-serif;">[${length}, ${style}, T=${temperature}]</span><br>${safeText}</div>`;
             input.value = '';
             chatbox.scrollTop = chatbox.scrollHeight;
 
@@ -82,7 +105,12 @@ HTML_TEMPLATE = """
                 const response = await fetch('/ask', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt: text, length: length, style: style })
+                    body: JSON.stringify({ 
+                        prompt: text, 
+                        length: length, 
+                        style: style,
+                        temperature: temperature
+                    })
                 });
                 
                 const data = await response.json();
@@ -96,12 +124,10 @@ HTML_TEMPLATE = """
         }
 
         function handleKeyPress(e) {
-            // Отправка по Enter (без зажатого Shift)
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 sendMessage();
             }
-            // Обработка Tab для вставки пробелов (4 пробела) вместо потери фокуса
             if (e.key === 'Tab') {
                 e.preventDefault();
                 const target = e.target;
@@ -116,8 +142,8 @@ HTML_TEMPLATE = """
 </html>
 """
 
-# --- Логика запроса к Gemini с системным промптом ---
-def ask_gemini(prompt, length, style):
+# --- Логика запроса к Gemini ---
+def ask_gemini(prompt, length, style, temperature):
     system_instruction = (
         "Ты — BIM-ассистент, эксперт по Autodesk Revit, Dynamo, Python и автоматизации проектирования.\n"
         "Отвечай на любые вопросы, связанные с Revit, моделированием, плагинами и скриптами.\n"
@@ -139,7 +165,10 @@ def ask_gemini(prompt, length, style):
         },
         "contents": [{
             "parts": [{"text": prompt}]
-        }]
+        }],
+        "generationConfig": {
+            "temperature": float(temperature)
+        }
     }
 
     response = requests.post(API_URL, headers=headers, json=payload)
@@ -161,8 +190,9 @@ def ask():
     user_prompt = data.get('prompt')
     length = data.get('length', 'сжатый')
     style = data.get('style', 'формальный')
+    temperature = data.get('temperature', 0.7)
     
-    answer = ask_gemini(user_prompt, length, style)
+    answer = ask_gemini(user_prompt, length, style, temperature)
     return jsonify({'answer': answer})
 
 if __name__ == "__main__":
