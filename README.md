@@ -1,4 +1,6 @@
-Скрипт позволяет отправить запрос Gemini 3.6 Flash через Python Script на CPython3 в Dynamo.
+Веб интерфейс для обращения к gemini - Python код в файле: Web VPS Gemini
+
+Альтернативный скрипт внутри Revit. Позволяет отправить запрос Gemini 3.6 Flash через Python Script на CPython3 в Dynamo.
 
 Запуск: 
 1. Открыть Проигрыватель
