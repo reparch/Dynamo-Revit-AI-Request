@@ -1,5 +1,7 @@
 from flask import Flask, request, jsonify, render_template_string
 import requests
+import json
+import os
 
 app = Flask(__name__)
 
@@ -7,6 +9,24 @@ app = Flask(__name__)
 API_KEY = "ВАШ_API_КЛЮЧ"
 MODEL = "gemini-3.5-flash"
 API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent?key={API_KEY}"
+HISTORY_FILE = "chat_history.json"
+
+# --- Функции работы с историей ---
+def load_history():
+    if os.path.exists(HISTORY_FILE):
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            try:
+                return json.load(f)
+            except json.JSONDecodeError:
+                return []
+    return []
+
+def save_history(history):
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(history, f, ensure_ascii=False, indent=2)
+
+# Глобальная переменная для хранения истории в памяти сервера
+chat_history = load_history()
 
 # --- HTML и JavaScript интерфейс ---
 HTML_TEMPLATE = """
@@ -34,8 +54,10 @@ HTML_TEMPLATE = """
         .token-badge { display: inline-flex; gap: 12px; font-size: 12px; color: #6c757d; background: #eef2f7; padding: 4px 10px; border-radius: 6px; margin-top: 8px; font-family: monospace; border: 1px solid #dcdfe6; }
         .input-area { display: flex; gap: 10px; align-items: flex-start; }
         textarea { flex-grow: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; resize: vertical; min-height: 44px; font-family: monospace; }
-        button { padding: 10px 20px; background-color: #2980b9; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; height: 44px; }
+        button { padding: 10px 20px; background-color: #2980b9; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; height: 44px; white-space: nowrap; }
         button:hover { background-color: #3498db; }
+        .clear-btn { background-color: #e74c3c; }
+        .clear-btn:hover { background-color: #c0392b; }
     </style>
 </head>
 <body>
@@ -74,10 +96,34 @@ HTML_TEMPLATE = """
     <div class="input-area">
         <textarea id="userInput" rows="3" placeholder="Вставьте код или вопрос (Shift+Enter для новой строки, Enter для отправки)..." onkeydown="handleKeyPress(event)"></textarea>
         <button onclick="sendMessage()">Отправить</button>
+        <button class="clear-btn" onclick="clearHistory()">Очистить чат</button>
     </div>
 
     <script>
         const tempSteps = [0.0, 0.7, 1.2];
+
+        // Загрузка истории при открытии страницы
+        window.onload = async function() {
+            try {
+                const response = await fetch('/history');
+                const history = await response.json();
+                const chatbox = document.getElementById('chatbox');
+                
+                history.forEach(msg => {
+                    const text = msg.parts[0].text;
+                    if (msg.role === 'user') {
+                        const safeText = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                        chatbox.innerHTML += `<div class="msg user">Вы:<br>${safeText}</div>`;
+                    } else if (msg.role === 'model') {
+                        const formattedAnswer = marked.parse(text);
+                        chatbox.innerHTML += `<div class="msg bot"><b style="font-family:sans-serif;">Gemini:</b><br>${formattedAnswer}</div><hr>`;
+                    }
+                });
+                chatbox.scrollTop = chatbox.scrollHeight;
+            } catch (error) {
+                console.error("Ошибка загрузки истории:", error);
+            }
+        };
 
         function updateTemperature(index) {
             document.getElementById('tempValue').innerText = tempSteps[index];
@@ -115,7 +161,6 @@ HTML_TEMPLATE = """
                 const data = await response.json();
                 const formattedAnswer = marked.parse(data.answer);
                 
-                // Формируем плашку с токенами
                 let tokenInfoHtml = '';
                 if (data.tokens) {
                     tokenInfoHtml = `
@@ -141,6 +186,13 @@ HTML_TEMPLATE = """
             chatbox.scrollTop = chatbox.scrollHeight;
         }
 
+        async function clearHistory() {
+            if (!confirm("Вы уверены, что хотите удалить историю диалога?")) return;
+            
+            await fetch('/clear_history', { method: 'POST' });
+            document.getElementById('chatbox').innerHTML = '';
+        }
+
         function handleKeyPress(e) {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -161,7 +213,7 @@ HTML_TEMPLATE = """
 """
 
 # --- Логика запроса к Gemini ---
-def ask_gemini(prompt, length, style, temperature):
+def ask_gemini(current_history, length, style, temperature):
     system_instruction = (
         "Ты — BIM-ассистент, эксперт по Autodesk Revit, Dynamo, Python и автоматизации проектирования.\n"
         "Отвечай на любые вопросы, связанные с Revit, моделированием, плагинами и скриптами.\n"
@@ -181,9 +233,7 @@ def ask_gemini(prompt, length, style, temperature):
         "system_instruction": {
             "parts": [{"text": system_instruction}]
         },
-        "contents": [{
-            "parts": [{"text": prompt}]
-        }],
+        "contents": current_history,
         "generationConfig": {
             "temperature": float(temperature)
         }
@@ -194,8 +244,6 @@ def ask_gemini(prompt, length, style, temperature):
         res_json = response.json()
         try:
             answer_text = res_json["candidates"][0]["content"]["parts"][0]["text"]
-            
-            # Извлекаем метаданные токенов
             usage = res_json.get("usageMetadata", {})
             tokens_data = {
                 "input": usage.get("promptTokenCount", 0),
@@ -208,19 +256,52 @@ def ask_gemini(prompt, length, style, temperature):
             
     return f"Ошибка {response.status_code}: {response.text}", None
 
+# --- Маршруты Flask ---
 @app.route('/')
 def index():
     return render_template_string(HTML_TEMPLATE)
 
+@app.route('/history', methods=['GET'])
+def get_history():
+    return jsonify(chat_history)
+
+@app.route('/clear_history', methods=['POST'])
+def clear_history():
+    global chat_history
+    chat_history = []
+    save_history(chat_history)
+    return jsonify({"status": "success"})
+
 @app.route('/ask', methods=['POST'])
 def ask():
+    global chat_history
+    
     data = request.json
     user_prompt = data.get('prompt')
     length = data.get('length', 'сжатый')
     style = data.get('style', 'формальный')
     temperature = data.get('temperature', 0.7)
     
-    answer, tokens = ask_gemini(user_prompt, length, style, temperature)
+    # 1. Добавляем сообщение пользователя в историю
+    chat_history.append({
+        "role": "user",
+        "parts": [{"text": user_prompt}]
+    })
+    
+    # 2. Отправляем всю историю в API
+    answer, tokens = ask_gemini(chat_history, length, style, temperature)
+    
+    # 3. Сохраняем ответ модели (если нет ошибки сервера)
+    if tokens is not None:
+        chat_history.append({
+            "role": "model",
+            "parts": [{"text": answer}]
+        })
+        save_history(chat_history)
+    else:
+        # Если API вернул ошибку, удаляем последний запрос пользователя, чтобы не ломать логику диалога
+        chat_history.pop()
+    
     return jsonify({'answer': answer, 'tokens': tokens})
 
 if __name__ == "__main__":
