@@ -5,7 +5,7 @@ app = Flask(__name__)
 
 # --- Настройки ---
 API_KEY = "ВАШ_API_КЛЮЧ"
-MODEL = "gemini-1.5-flash"
+MODEL = "gemini-3.5-flash"
 API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent?key={API_KEY}"
 
 # --- HTML и JavaScript интерфейс ---
