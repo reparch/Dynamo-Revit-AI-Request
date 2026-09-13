@@ -9,9 +9,9 @@ app = Flask(__name__)
 API_KEY = "ВАШ_API_КЛЮЧ"
 MODEL = "gemini-3.5-flash"
 API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent?key={API_KEY}"
+COUNT_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:countTokens?key={API_KEY}"
 HISTORY_FILE = "chat_history.json"
 
-# --- Функции работы с историей ---
 def load_history():
     if os.path.exists(HISTORY_FILE):
         with open(HISTORY_FILE, "r", encoding="utf-8") as f:
@@ -25,8 +25,19 @@ def save_history(history):
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
 
-# Глобальная переменная для хранения истории в памяти сервера
 chat_history = load_history()
+
+# --- Вспомогательная функция для точного подсчета токенов ---
+def get_tokens_count(text):
+    if not text: return 0
+    payload = {"contents": [{"parts": [{"text": text}]}]}
+    try:
+        res = requests.post(COUNT_URL, headers={"Content-Type": "application/json"}, json=payload)
+        if res.status_code == 200:
+            return res.json().get("totalTokens", 0)
+    except Exception:
+        pass
+    return 0
 
 # --- HTML и JavaScript интерфейс ---
 HTML_TEMPLATE = """
@@ -51,7 +62,9 @@ HTML_TEMPLATE = """
         .bot p { margin: 5px 0; }
         .bot ul, .bot ol { padding-left: 20px; margin: 5px 0; }
         .bot pre { background: #f0f2f5; padding: 10px; border-radius: 5px; overflow-x: auto; color: #333; }
-        .token-badge { display: inline-flex; gap: 12px; font-size: 12px; color: #6c757d; background: #eef2f7; padding: 4px 10px; border-radius: 6px; margin-top: 8px; font-family: monospace; border: 1px solid #dcdfe6; }
+        .token-badge { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; font-size: 12px; color: #495057; background: #f8f9fa; padding: 12px; border-radius: 6px; margin-top: 12px; font-family: sans-serif; border: 1px solid #dee2e6; }
+        .token-details { font-size: 11px; color: #6c757d; margin-top: 4px; margin-left: 20px; display: flex; flex-direction: column; gap: 2px; }
+        .token-output { color: #198754; background: #e8f8f5; padding: 3px 8px; border-radius: 4px; font-weight: bold; border: 1px solid #a9dfbf; }
         .input-area { display: flex; gap: 10px; align-items: flex-start; }
         textarea { flex-grow: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; resize: vertical; min-height: 44px; font-family: monospace; }
         button { padding: 10px 20px; background-color: #2980b9; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; height: 44px; white-space: nowrap; }
@@ -102,7 +115,6 @@ HTML_TEMPLATE = """
     <script>
         const tempSteps = [0.0, 0.7, 1.2];
 
-        // Загрузка истории при открытии страницы
         window.onload = async function() {
             try {
                 const response = await fetch('/history');
@@ -165,9 +177,16 @@ HTML_TEMPLATE = """
                 if (data.tokens) {
                     tokenInfoHtml = `
                         <div class="token-badge">
-                            <span>📥 Input: <b>${data.tokens.input}</b></span>
-                            <span>📤 Output: <b>${data.tokens.output}</b></span>
-                            <span>📊 Total: <b>${data.tokens.total}</b></span>
+                            <div>
+                                📥 <b>Входящий контекст: ${data.tokens.input} токенов</b>
+                                <div class="token-details">
+                                    <span>• Системные настройки: <b>${data.tokens.sys}</b></span>
+                                    <span>• Память (история переписки): <b>${data.tokens.hist}</b></span>
+                                    <span>• Ваш новый запрос: <b>${data.tokens.new}</b></span>
+                                </div>
+                            </div>
+                            <div class="token-output">📤 Текущий ответ ИИ (генерация): ${data.tokens.output}</div>
+                            <div>📊 <b>Итого за операцию: ${data.tokens.total}</b></div>
                         </div>
                     `;
                 }
@@ -188,7 +207,6 @@ HTML_TEMPLATE = """
 
         async function clearHistory() {
             if (!confirm("Вы уверены, что хотите удалить историю диалога?")) return;
-            
             await fetch('/clear_history', { method: 'POST' });
             document.getElementById('chatbox').innerHTML = '';
         }
@@ -212,7 +230,6 @@ HTML_TEMPLATE = """
 </html>
 """
 
-# --- Логика запроса к Gemini ---
 def ask_gemini(current_history, length, style, temperature):
     system_instruction = (
         "Ты — BIM-ассистент, эксперт по Autodesk Revit, Dynamo, Python и автоматизации проектирования.\n"
@@ -227,6 +244,11 @@ def ask_gemini(current_history, length, style, temperature):
         "   - СТИЛЬ 'формальный': СТРОГО запрещены любые приветствия вроде 'Привет', сленг и фамильярные обращения ('друг', 'дружище', 'бро'). Только строгий, профессиональный и деловой тон.\n"
         "   - СТИЛЬ 'френдли': дружелюбный тон повествования, допускаются и приветствуются неформальные обращения ('друг', 'дружище', 'бро')."
     )
+
+    # Замеряем токены отдельных частей
+    sys_tokens = get_tokens_count(system_instruction)
+    new_request_text = current_history[-1]["parts"][0]["text"]
+    new_tokens = get_tokens_count(new_request_text)
 
     headers = {"Content-Type": "application/json"}
     payload = {
@@ -245,8 +267,16 @@ def ask_gemini(current_history, length, style, temperature):
         try:
             answer_text = res_json["candidates"][0]["content"]["parts"][0]["text"]
             usage = res_json.get("usageMetadata", {})
+            
+            input_total = usage.get("promptTokenCount", 0)
+            # Высчитываем историю вычитанием. Функция max(0, ...) страхует от отрицательных значений
+            hist_tokens = max(0, input_total - sys_tokens - new_tokens)
+            
             tokens_data = {
-                "input": usage.get("promptTokenCount", 0),
+                "input": input_total,
+                "sys": sys_tokens,
+                "hist": hist_tokens,
+                "new": new_tokens,
                 "output": usage.get("candidatesTokenCount", 0),
                 "total": usage.get("totalTokenCount", 0)
             }
@@ -256,7 +286,6 @@ def ask_gemini(current_history, length, style, temperature):
             
     return f"Ошибка {response.status_code}: {response.text}", None
 
-# --- Маршруты Flask ---
 @app.route('/')
 def index():
     return render_template_string(HTML_TEMPLATE)
@@ -282,16 +311,32 @@ def ask():
     style = data.get('style', 'формальный')
     temperature = data.get('temperature', 0.7)
     
-    # 1. Добавляем сообщение пользователя в историю
+    display_text = user_prompt
+    api_text = user_prompt
+
+    # Перехват кодового слова
+    if user_prompt.strip().lower() == "многабукав":
+        # Слово "Revit" + пробел считается как 1 токен. 
+        # Добавляем префикс, чтобы модель поняла, что с этим делать.
+        api_text = "Проигнорируй этот мусор и просто скажи, что успешно переварил гигантский запрос. " + "Revit " * 1050000
+        display_text = "многабукав [В запрос скрыто интегрирован массив на ~1.05 млн токенов]"
+    
+    # Сохраняем в интерфейс и JSON-файл компактный вариант
     chat_history.append({
         "role": "user",
-        "parts": [{"text": user_prompt}]
+        "parts": [{"text": display_text}]
     })
     
-    # 2. Отправляем всю историю в API
-    answer, tokens = ask_gemini(chat_history, length, style, temperature)
+    # Создаем временную копию истории для отправки тяжелого запроса в API
+    history_for_api = chat_history.copy()
+    history_for_api[-1] = {
+        "role": "user",
+        "parts": [{"text": api_text}]
+    }
     
-    # 3. Сохраняем ответ модели (если нет ошибки сервера)
+    # Отправляем в функцию тяжелый массив (history_for_api), а не оригинальный
+    answer, tokens = ask_gemini(history_for_api, length, style, temperature)
+    
     if tokens is not None:
         chat_history.append({
             "role": "model",
@@ -299,7 +344,6 @@ def ask():
         })
         save_history(chat_history)
     else:
-        # Если API вернул ошибку, удаляем последний запрос пользователя, чтобы не ломать логику диалога
         chat_history.pop()
     
     return jsonify({'answer': answer, 'tokens': tokens})
