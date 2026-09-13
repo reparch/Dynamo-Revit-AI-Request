@@ -5,7 +5,7 @@ app = Flask(__name__)
 
 # --- Настройки ---
 API_KEY = "ВАШ_API_КЛЮЧ"
-MODEL = "gemini-3.5-flash-lite"
+MODEL = "gemini-1.5-flash"
 API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent?key={API_KEY}"
 
 # --- HTML и JavaScript интерфейс ---
@@ -31,6 +31,7 @@ HTML_TEMPLATE = """
         .bot p { margin: 5px 0; }
         .bot ul, .bot ol { padding-left: 20px; margin: 5px 0; }
         .bot pre { background: #f0f2f5; padding: 10px; border-radius: 5px; overflow-x: auto; color: #333; }
+        .token-badge { display: inline-flex; gap: 12px; font-size: 12px; color: #6c757d; background: #eef2f7; padding: 4px 10px; border-radius: 6px; margin-top: 8px; font-family: monospace; border: 1px solid #dcdfe6; }
         .input-area { display: flex; gap: 10px; align-items: flex-start; }
         textarea { flex-grow: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; resize: vertical; min-height: 44px; font-family: monospace; }
         button { padding: 10px 20px; background-color: #2980b9; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; height: 44px; }
@@ -58,7 +59,6 @@ HTML_TEMPLATE = """
         <div class="control-group temp-container">
             <label for="tempSlider"><b>Температура:</b> <span id="tempValue" style="color: #2980b9; font-weight: bold;">0.7</span></label>
             <div class="temp-slider-wrap">
-                <!-- Слайдер на 3 положения: 0, 1, 2 -->
                 <input type="range" id="tempSlider" min="0" max="2" step="1" value="1" oninput="updateTemperature(this.value)">
                 <div class="ticks">
                     <span>0.0</span>
@@ -77,7 +77,6 @@ HTML_TEMPLATE = """
     </div>
 
     <script>
-        // Соответствие положений ползунка значениям temperature
         const tempSteps = [0.0, 0.7, 1.2];
 
         function updateTemperature(index) {
@@ -115,7 +114,26 @@ HTML_TEMPLATE = """
                 
                 const data = await response.json();
                 const formattedAnswer = marked.parse(data.answer);
-                chatbox.innerHTML += `<div class="msg bot"><b style="font-family:sans-serif;">Gemini:</b><br>${formattedAnswer}</div><hr>`;
+                
+                // Формируем плашку с токенами
+                let tokenInfoHtml = '';
+                if (data.tokens) {
+                    tokenInfoHtml = `
+                        <div class="token-badge">
+                            <span>📥 Input: <b>${data.tokens.input}</b></span>
+                            <span>📤 Output: <b>${data.tokens.output}</b></span>
+                            <span>📊 Total: <b>${data.tokens.total}</b></span>
+                        </div>
+                    `;
+                }
+
+                chatbox.innerHTML += `
+                    <div class="msg bot">
+                        <b style="font-family:sans-serif;">Gemini:</b><br>${formattedAnswer}
+                        ${tokenInfoHtml}
+                    </div>
+                    <hr>
+                `;
             } catch (error) {
                 chatbox.innerHTML += `<div class="msg bot" style="color: red;"><b>Ошибка соединения с сервером.</b></div><hr>`;
             }
@@ -175,10 +193,20 @@ def ask_gemini(prompt, length, style, temperature):
     if response.status_code == 200:
         res_json = response.json()
         try:
-            return res_json["candidates"][0]["content"]["parts"][0]["text"]
+            answer_text = res_json["candidates"][0]["content"]["parts"][0]["text"]
+            
+            # Извлекаем метаданные токенов
+            usage = res_json.get("usageMetadata", {})
+            tokens_data = {
+                "input": usage.get("promptTokenCount", 0),
+                "output": usage.get("candidatesTokenCount", 0),
+                "total": usage.get("totalTokenCount", 0)
+            }
+            return answer_text, tokens_data
         except (KeyError, IndexError):
-            return "Ошибка при обработке ответа от API."
-    return f"Ошибка {response.status_code}: {response.text}"
+            return "Ошибка при обработке ответа от API.", None
+            
+    return f"Ошибка {response.status_code}: {response.text}", None
 
 @app.route('/')
 def index():
@@ -192,8 +220,8 @@ def ask():
     style = data.get('style', 'формальный')
     temperature = data.get('temperature', 0.7)
     
-    answer = ask_gemini(user_prompt, length, style, temperature)
-    return jsonify({'answer': answer})
+    answer, tokens = ask_gemini(user_prompt, length, style, temperature)
+    return jsonify({'answer': answer, 'tokens': tokens})
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000)
